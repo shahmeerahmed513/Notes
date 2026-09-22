@@ -1,595 +1,341 @@
+/**
+ * Notepad Pro - Application Logic
+ * Persistent Storage & Pure Note Writing Interface
+ */
+
 class NotepadApp {
   constructor() {
-    this.notes =
-      JSON.parse(localStorage.getItem("notepad_notes")) || [];
-
+    // Load persisted notes or initialize empty array
+    this.notes = JSON.parse(localStorage.getItem('notepad_notes')) || [];
     this.activeNoteId = null;
-    this.currentFilter = "all";
+    this.currentFilter = 'all';
     this.selectedTag = null;
-    this.searchQuery = "";
-    this.sortBy = "updated";
+    this.searchQuery = '';
+    this.sortBy = 'updated';
 
     this.initElements();
-    this.initEvents();
-
+    this.initEventListeners();
     this.render();
   }
 
   initElements() {
-    this.notesGrid =
-      document.getElementById("notesGrid");
+    this.notesGrid = document.getElementById('notesGrid');
+    this.emptyState = document.getElementById('emptyState');
+    this.editorSection = document.getElementById('editorSection');
+    this.searchInput = document.getElementById('searchInput');
+    this.sortSelect = document.getElementById('sortSelect');
+    
+    // Writer / Editor Elements
+    this.noteTitle = document.getElementById('noteTitle');
+    this.noteContent = document.getElementById('noteContent');
+    this.noteTags = document.getElementById('noteTags');
+    this.saveStatus = document.getElementById('saveStatus');
+    this.wordCount = document.getElementById('wordCount');
+    this.charCount = document.getElementById('charCount');
+    this.lastModifiedTime = document.getElementById('lastModifiedTime');
 
-    this.emptyState =
-      document.getElementById("emptyState");
+    // Counters & Tags
+    this.countAll = document.getElementById('countAll');
+    this.countPinned = document.getElementById('countPinned');
+    this.countFavorites = document.getElementById('countFavorites');
+    this.tagList = document.getElementById('tagList');
 
-    this.editorSection =
-      document.getElementById("editorSection");
-
-    this.searchInput =
-      document.getElementById("searchInput");
-
-    this.sortSelect =
-      document.getElementById("sortSelect");
-
-    this.noteTitle =
-      document.getElementById("noteTitle");
-
-    this.noteContent =
-      document.getElementById("noteContent");
-
-    this.noteTags =
-      document.getElementById("noteTags");
-
-    this.wordCount =
-      document.getElementById("wordCount");
-
-    this.charCount =
-      document.getElementById("charCount");
-
-    this.countAll =
-      document.getElementById("countAll");
-
-    this.countPinned =
-      document.getElementById("countPinned");
-
-    this.countFavorites =
-      document.getElementById("countFavorites");
-
-    this.tagList =
-      document.getElementById("tagList");
-
-    this.pinNoteBtn =
-      document.getElementById("pinNoteBtn");
-
-    this.starNoteBtn =
-      document.getElementById("starNoteBtn");
+    // Action Buttons
+    this.pinNoteBtn = document.getElementById('pinNoteBtn');
+    this.starNoteBtn = document.getElementById('starNoteBtn');
   }
 
-  initEvents() {
-    document
-      .getElementById("newNoteBtn")
-      .addEventListener(
-        "click",
-        () => this.createNote()
-      );
+  initEventListeners() {
+    // Create, View, Delete Handlers
+    document.getElementById('newNoteBtn').addEventListener('click', () => this.createNewNote());
+    document.getElementById('closeEditorBtn').addEventListener('click', () => this.closeEditor());
+    document.getElementById('deleteNoteBtn').addEventListener('click', () => this.deleteActiveNote());
 
-    document
-      .getElementById("closeEditorBtn")
-      .addEventListener(
-        "click",
-        () => this.closeEditor()
-      );
+    // Search and Sort Filter Handlers
+    this.searchInput.addEventListener('input', (e) => {
+      this.searchQuery = e.target.value.toLowerCase();
+      this.render();
+    });
 
-    document
-      .getElementById("deleteNoteBtn")
-      .addEventListener(
-        "click",
-        () => this.deleteNote()
-      );
+    this.sortSelect.addEventListener('change', (e) => {
+      this.sortBy = e.target.value;
+      this.render();
+    });
 
-    this.searchInput.addEventListener(
-      "input",
-      event => {
-        this.searchQuery =
-          event.target.value.toLowerCase();
-
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        this.currentFilter = item.dataset.filter;
+        this.selectedTag = null;
         this.render();
-      }
-    );
-
-    this.sortSelect.addEventListener(
-      "change",
-      event => {
-        this.sortBy = event.target.value;
-
-        this.render();
-      }
-    );
-
-    document
-      .querySelectorAll(".nav-item")
-      .forEach(item => {
-        item.addEventListener(
-          "click",
-          () => {
-            document
-              .querySelectorAll(".nav-item")
-              .forEach(navItem => {
-                navItem.classList.remove("active");
-              });
-
-            item.classList.add("active");
-
-            this.currentFilter =
-              item.dataset.filter;
-
-            this.selectedTag = null;
-
-            this.render();
-          }
-        );
       });
+    });
 
-    const save = () => this.saveCurrentNote();
+    // Auto-save triggers on typing in fields
+    const saveTrigger = () => this.autoSaveActiveNote();
+    this.noteTitle.addEventListener('input', saveTrigger);
+    this.noteContent.addEventListener('input', saveTrigger);
+    this.noteTags.addEventListener('input', saveTrigger);
 
-    this.noteTitle.addEventListener(
-      "input",
-      save
-    );
-
-    this.noteContent.addEventListener(
-      "input",
-      save
-    );
-
-    this.noteTags.addEventListener(
-      "input",
-      save
-    );
-
-    this.pinNoteBtn.addEventListener(
-      "click",
-      () => {
-        const note = this.getActiveNote();
-
-        if (!note) return;
-
+    // Pin & Star Actions
+    this.pinNoteBtn.addEventListener('click', () => {
+      const note = this.getActiveNote();
+      if (note) {
         note.pinned = !note.pinned;
-
-        this.saveNotes();
-        this.updateEditorButtons(note);
-        this.render();
+        this.updateEditorControls(note);
+        this.saveAndRender();
       }
-    );
+    });
 
-    this.starNoteBtn.addEventListener(
-      "click",
-      () => {
-        const note = this.getActiveNote();
-
-        if (!note) return;
-
+    this.starNoteBtn.addEventListener('click', () => {
+      const note = this.getActiveNote();
+      if (note) {
         note.favorite = !note.favorite;
-
-        this.saveNotes();
-        this.updateEditorButtons(note);
-        this.render();
+        this.updateEditorControls(note);
+        this.saveAndRender();
       }
-    );
+    });
 
-    document
-      .getElementById("colorOptions")
-      .addEventListener(
-        "click",
-        event => {
-          if (
-            !event.target.classList.contains(
-              "color-dot"
-            )
-          ) {
-            return;
-          }
-
-          document
-            .querySelectorAll(".color-dot")
-            .forEach(dot => {
-              dot.classList.remove("active");
-            });
-
-          event.target.classList.add("active");
-
-          const note = this.getActiveNote();
-
-          if (!note) return;
-
-          note.color =
-            event.target.dataset.color;
-
-          this.saveNotes();
-          this.render();
+    // Color Selector Event Handling
+    document.getElementById('colorOptions').addEventListener('click', (e) => {
+      if (e.target.classList.contains('color-dot')) {
+        document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+        e.target.classList.add('active');
+        const note = this.getActiveNote();
+        if (note) {
+          note.color = e.target.dataset.color;
+          this.saveAndRender();
         }
-      );
+      }
+    });
+
+    // Export & Import Management
+    document.getElementById('exportBtn').addEventListener('click', () => this.exportBackup());
+    document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+    document.getElementById('importFile').addEventListener('change', (e) => this.importBackup(e));
   }
 
-  createNote() {
-    const now =
-      new Date().toISOString();
-
-    const note = {
+  // --- CRUD OPERATIONS ---
+  createNewNote() {
+    const newNote = {
       id: Date.now().toString(),
-      title: "",
-      content: "",
+      title: '',
+      content: '',
       tags: [],
       pinned: false,
       favorite: false,
-      color: "default",
-      createdAt: now,
-      updatedAt: now
+      color: 'default',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
-    this.notes.unshift(note);
-
-    this.saveNotes();
-    this.openEditor(note.id);
-    this.render();
+    this.notes.unshift(newNote);
+    this.saveNotesToStorage();
+    this.openEditor(newNote.id);
   }
 
   getActiveNote() {
-    return this.notes.find(
-      note =>
-        note.id === this.activeNoteId
-    );
+    return this.notes.find(n => n.id === this.activeNoteId);
   }
 
-  saveCurrentNote() {
-    const note =
-      this.getActiveNote();
-
+  autoSaveActiveNote() {
+    const note = this.getActiveNote();
     if (!note) return;
 
-    note.title =
-      this.noteTitle.value;
-
-    note.content =
-      this.noteContent.value;
-
-    note.tags =
-      this.noteTags.value
-        .split(",")
-        .map(tag => tag.trim())
-        .filter(Boolean);
-
-    note.updatedAt =
-      new Date().toISOString();
+    note.title = this.noteTitle.value;
+    note.content = this.noteContent.value;
+    note.tags = this.noteTags.value.split(',').map(t => t.trim()).filter(Boolean);
+    note.updatedAt = new Date().toISOString();
 
     this.updateEditorStats(note);
-
-    this.saveNotes();
-
-    this.renderNotes();
+    this.saveNotesToStorage();
+    this.renderNotesGrid();
     this.renderTags();
-    this.updateCounters();
   }
 
-  deleteNote() {
+  deleteActiveNote() {
     if (!this.activeNoteId) return;
-
-    const confirmed =
-      confirm(
-        "Are you sure you want to delete this note?"
-      );
-
-    if (!confirmed) return;
-
-    this.notes =
-      this.notes.filter(
-        note =>
-          note.id !== this.activeNoteId
-      );
-
-    this.saveNotes();
-
-    this.closeEditor();
-    this.render();
+    if (confirm('Are you sure you want to delete this note?')) {
+      this.notes = this.notes.filter(n => n.id !== this.activeNoteId);
+      this.saveNotesToStorage();
+      this.closeEditor();
+      this.render();
+    }
   }
 
+  // --- EDITOR CONTROLS ---
   openEditor(id) {
     this.activeNoteId = id;
-
-    const note =
-      this.getActiveNote();
-
+    const note = this.getActiveNote();
     if (!note) return;
 
-    this.noteTitle.value =
-      note.title;
+    this.noteTitle.value = note.title;
+    this.noteContent.value = note.content;
+    this.noteTags.value = note.tags.join(', ');
 
-    this.noteContent.value =
-      note.content;
+    document.querySelectorAll('.color-dot').forEach(dot => {
+      dot.classList.toggle('active', dot.dataset.color === (note.color || 'default'));
+    });
 
-    this.noteTags.value =
-      note.tags.join(", ");
-
-    document
-      .querySelectorAll(".color-dot")
-      .forEach(dot => {
-        dot.classList.toggle(
-          "active",
-          dot.dataset.color ===
-            (note.color || "default")
-        );
-      });
-
-    this.updateEditorButtons(note);
+    this.updateEditorControls(note);
     this.updateEditorStats(note);
 
-    this.editorSection.classList.remove(
-      "hidden"
-    );
+    this.editorSection.classList.remove('hidden');
+    this.noteContent.focus();
   }
 
   closeEditor() {
     this.activeNoteId = null;
-
-    this.editorSection.classList.add(
-      "hidden"
-    );
+    this.editorSection.classList.add('hidden');
   }
 
-  updateEditorButtons(note) {
-    const pinIcon =
-      this.pinNoteBtn.querySelector("i");
+  updateEditorControls(note) {
+    const pinIcon = this.pinNoteBtn.querySelector('i');
+    const starIcon = this.starNoteBtn.querySelector('i');
 
-    const starIcon =
-      this.starNoteBtn.querySelector("i");
-
-    pinIcon.className =
-      note.pinned
-        ? "fa-solid fa-thumbtack active-icon"
-        : "fa-regular fa-thumbtack";
-
-    starIcon.className =
-      note.favorite
-        ? "fa-solid fa-star active-icon"
-        : "fa-regular fa-star";
+    pinIcon.className = note.pinned ? 'fa-solid fa-thumbtack active-icon' : 'fa-regular fa-thumbtack';
+    starIcon.className = note.favorite ? 'fa-solid fa-star active-icon' : 'fa-regular fa-star';
   }
 
   updateEditorStats(note) {
-    const words =
-      note.content.trim()
-        ? note.content
-            .trim()
-            .split(/\s+/)
-            .length
-        : 0;
+    const words = note.content.trim() ? note.content.trim().split(/\s+/).length : 0;
+    const chars = note.content.length;
 
-    const characters =
-      note.content.length;
-
-    this.wordCount.textContent =
-      `${words} words`;
-
-    this.charCount.textContent =
-      `${characters} characters`;
+    this.wordCount.textContent = `${words} word${words !== 1 ? 's' : ''}`;
+    this.charCount.textContent = `${chars} character${chars !== 1 ? 's' : ''}`;
+    this.lastModifiedTime.textContent = `Edited: ${new Date(note.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   }
 
+  // --- FILTER & SORT LOGIC ---
   getFilteredNotes() {
-    return this.notes
-      .filter(note => {
-        if (
-          this.currentFilter === "pinned" &&
-          !note.pinned
-        ) {
-          return false;
-        }
+    return this.notes.filter(note => {
+      if (this.currentFilter === 'pinned' && !note.pinned) return false;
+      if (this.currentFilter === 'favorites' && !note.favorite) return false;
 
-        if (
-          this.currentFilter === "favorites" &&
-          !note.favorite
-        ) {
-          return false;
-        }
+      if (this.selectedTag && !note.tags.includes(this.selectedTag)) return false;
 
-        if (
-          this.selectedTag &&
-          !note.tags.includes(
-            this.selectedTag
-          )
-        ) {
-          return false;
-        }
+      if (this.searchQuery) {
+        const titleMatch = note.title.toLowerCase().includes(this.searchQuery);
+        const contentMatch = note.content.toLowerCase().includes(this.searchQuery);
+        const tagMatch = note.tags.some(t => t.toLowerCase().includes(this.searchQuery));
+        if (!titleMatch && !contentMatch && !tagMatch) return false;
+      }
 
-        if (this.searchQuery) {
-          const title =
-            note.title
-              .toLowerCase()
-              .includes(
-                this.searchQuery
-              );
-
-          const content =
-            note.content
-              .toLowerCase()
-              .includes(
-                this.searchQuery
-              );
-
-          if (!title && !content) {
-            return false;
-          }
-        }
-
-        return true;
-      })
-      .sort((a, b) => {
-        if (
-          this.sortBy === "title"
-        ) {
-          return a.title.localeCompare(
-            b.title
-          );
-        }
-
-        if (
-          this.sortBy === "created"
-        ) {
-          return (
-            new Date(b.createdAt) -
-            new Date(a.createdAt)
-          );
-        }
-
-        return (
-          new Date(b.updatedAt) -
-          new Date(a.updatedAt)
-        );
-      });
+      return true;
+    }).sort((a, b) => {
+      if (this.sortBy === 'title') return a.title.localeCompare(b.title);
+      if (this.sortBy === 'created') return new Date(b.createdAt) - new Date(a.createdAt);
+      return new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
   }
 
+  // --- VIEW RENDERING ---
   render() {
-    this.renderNotes();
+    this.renderNotesGrid();
     this.renderTags();
     this.updateCounters();
   }
 
-  renderNotes() {
-    const notes =
-      this.getFilteredNotes();
+  renderNotesGrid() {
+    const filtered = this.getFilteredNotes();
+    this.notesGrid.innerHTML = '';
 
-    this.notesGrid.innerHTML = "";
+    if (filtered.length === 0) {
+      this.emptyState.classList.remove('hidden');
+    } else {
+      this.emptyState.classList.add('hidden');
+      filtered.forEach(note => {
+        const card = document.createElement('div');
+        card.className = 'note-card';
+        card.dataset.color = note.color || 'default';
+        
+        const tagsHTML = note.tags.map(t => `<span class="mini-tag">#${t}</span>`).join('');
 
-    if (notes.length === 0) {
-      this.emptyState.classList.remove(
-        "hidden"
-      );
+        card.innerHTML = `
+          <div class="note-card-header">
+            <h3 class="note-card-title">${note.title || 'Untitled Note'}</h3>
+            ${note.pinned ? '<i class="fa-solid fa-thumbtack pin-icon"></i>' : ''}
+          </div>
+          <p class="note-card-snippet">${note.content || 'No text content...'}</p>
+          <div class="note-card-footer">
+            <span>${new Date(note.updatedAt).toLocaleDateString()}</span>
+            <div class="note-card-tags">${tagsHTML}</div>
+          </div>
+        `;
 
-      return;
+        card.addEventListener('click', () => this.openEditor(note.id));
+        this.notesGrid.appendChild(card);
+      });
     }
-
-    this.emptyState.classList.add(
-      "hidden"
-    );
-
-    notes.forEach(note => {
-      const card =
-        document.createElement("div");
-
-      card.className =
-        "note-card";
-
-      card.dataset.color =
-        note.color || "default";
-
-      card.innerHTML = `
-        <h3>
-          ${note.title || "Untitled Note"}
-          ${note.pinned ? " 📌" : ""}
-        </h3>
-
-        <p class="note-content-preview">
-          ${note.content || "No text content..."}
-        </p>
-
-        <div class="card-footer">
-          <span>
-            ${new Date(
-              note.updatedAt
-            ).toLocaleDateString()}
-          </span>
-
-          <span>
-            ${note.tags
-              .slice(0, 2)
-              .map(tag => `#${tag}`)
-              .join(" ")}
-          </span>
-        </div>
-      `;
-
-      card.addEventListener(
-        "click",
-        () => this.openEditor(note.id)
-      );
-
-      this.notesGrid.appendChild(
-        card
-      );
-    });
   }
 
   renderTags() {
-    const tags = new Set();
-
-    this.notes.forEach(note => {
-      note.tags.forEach(tag => {
-        tags.add(tag);
+    const allTags = new Set();
+    this.notes.forEach(n => n.tags.forEach(t => allTags.add(t)));
+    
+    this.tagList.innerHTML = '';
+    allTags.forEach(tag => {
+      const tagEl = document.createElement('span');
+      tagEl.className = `tag-item ${this.selectedTag === tag ? 'active' : ''}`;
+      tagEl.textContent = `#${tag}`;
+      tagEl.addEventListener('click', () => {
+        this.selectedTag = this.selectedTag === tag ? null : tag;
+        this.render();
       });
-    });
-
-    this.tagList.innerHTML = "";
-
-    tags.forEach(tag => {
-      const tagElement =
-        document.createElement("span");
-
-      tagElement.className =
-        "tag-item";
-
-      tagElement.textContent =
-        `#${tag}`;
-
-      if (
-        tag === this.selectedTag
-      ) {
-        tagElement.classList.add(
-          "active"
-        );
-      }
-
-      tagElement.addEventListener(
-        "click",
-        () => {
-          this.selectedTag =
-            this.selectedTag === tag
-              ? null
-              : tag;
-
-          this.render();
-        }
-      );
-
-      this.tagList.appendChild(
-        tagElement
-      );
+      this.tagList.appendChild(tagEl);
     });
   }
 
   updateCounters() {
-    this.countAll.textContent =
-      this.notes.length;
-
-    this.countPinned.textContent =
-      this.notes.filter(
-        note => note.pinned
-      ).length;
-
-    this.countFavorites.textContent =
-      this.notes.filter(
-        note => note.favorite
-      ).length;
+    this.countAll.textContent = this.notes.length;
+    this.countPinned.textContent = this.notes.filter(n => n.pinned).length;
+    this.countFavorites.textContent = this.notes.filter(n => n.favorite).length;
   }
 
-  saveNotes() {
-    localStorage.setItem(
-      "notepad_notes",
-      JSON.stringify(this.notes)
-    );
+  // --- LOCALSTORAGE PERSISTENCE ---
+  saveNotesToStorage() {
+    localStorage.setItem('notepad_notes', JSON.stringify(this.notes));
+  }
+
+  saveAndRender() {
+    this.saveNotesToStorage();
+    this.render();
+  }
+
+  exportBackup() {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.notes, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `notepad_backup_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  }
+
+  importBackup(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const importedNotes = JSON.parse(event.target.result);
+        if (Array.isArray(importedNotes)) {
+          this.notes = importedNotes;
+          this.saveAndRender();
+          alert('Notes imported and saved successfully!');
+        }
+      } catch (err) {
+        alert('Invalid JSON file format.');
+      }
+    };
+    reader.readAsText(file);
   }
 }
 
-document.addEventListener(
-  "DOMContentLoaded",
-  () => {
-    new NotepadApp();
-  }
-);
+// Instantiate application on page initialization
+document.addEventListener('DOMContentLoaded', () => {
+  window.app = new NotepadApp();
+});
