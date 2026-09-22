@@ -338,4 +338,4 @@ class NotepadApp {
 // Instantiate application on page initialization
 document.addEventListener('DOMContentLoaded', () => {
   window.app = new NotepadApp();
-}
+});
